@@ -22,11 +22,13 @@ namespace IdentityTest.Controllers
     {
         private readonly AppDbContext _db;
         private readonly IUserPermissionService _permService;
+        private readonly ILogger<AuthController> _logger;
 
-        public AuthController(AppDbContext db, IUserPermissionService permService)
+        public AuthController(AppDbContext db, IUserPermissionService permService , ILogger<AuthController> logger)
         {
             _db = db;
             _permService = permService;
+            this._logger = logger;
         }
 
         [HttpPost("register")]
@@ -56,21 +58,25 @@ namespace IdentityTest.Controllers
         public async Task<IActionResult> Login([FromBody] LoginRequest request)
         {
             var user = await _db.Users.FirstOrDefaultAsync(u => u.Username == request.Username && u.IsActive);
-            if (user is null || !BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
-                return Unauthorized(new { message = "invalid credentials" });
+
+            if (user == null)
+                return Unauthorized(new { message = "user not found" });
+
+            if (!BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
+                return Unauthorized(new { message = "wrong password", dbHash = user.PasswordHash });
 
             var permissions = await _permService.GetPermissionsAsync(user.Id);
-
+            _logger.LogInformation("Permissions for user {User}: {Perms}", user.Username, string.Join(",", permissions));
             var claims = new List<Claim>
-        {
-            new(ClaimTypes.NameIdentifier, user.Id.ToString()),
-            new(ClaimTypes.Name, user.Username)
-        };
+    {
+        new(ClaimTypes.NameIdentifier, user.Id.ToString()),
+        new(ClaimTypes.Name, user.Username)
+    };
             claims.AddRange(permissions.Select(p => new Claim("permission", p)));
 
             var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
             var principal = new ClaimsPrincipal(identity);
-
+           
             await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal, new AuthenticationProperties
             {
                 IsPersistent = true,
@@ -93,6 +99,18 @@ namespace IdentityTest.Controllers
             if (!User.Identity?.IsAuthenticated ?? true) return Unauthorized();
             var perms = User.Claims.Where(c => c.Type == "permission").Select(c => c.Value).ToList();
             return Ok(new { user = User.Identity!.Name, permissions = perms });
+        }
+
+
+        [HttpGet("test-bcrypt")]
+        public IActionResult TestBcrypt()
+        {
+            string password = "123456";
+            string dbHash = "$2a$11$XGgpe8N7RTU9XXsCqhRek.2LMJskmTn7neeCz5A6HRjnln5MHHCYS";
+
+            bool isValid = BCrypt.Net.BCrypt.Verify(password, dbHash);
+
+            return Ok(new { isValid });
         }
     }
 }

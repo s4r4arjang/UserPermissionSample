@@ -50,12 +50,10 @@ using (var scope = app.Services.CreateScope())
 
     try
     {
-        Console.WriteLine("===> Starting database seeding...");
+        Console.WriteLine("===> Starting database migration & seeding...");
 
-        await db.Database.EnsureDeletedAsync();   // پاک کردن دیتابیس
-        await db.Database.EnsureCreatedAsync();   // ساختن دیتابیس و جداول
-
-        await DataSeeder.SeedAsync(db);           // ریختن دیتا
+        await db.Database.MigrateAsync();   // 👈 فقط migrate
+        await DataSeeder.SeedAsync(db);     // 👈 حالا seeder کارشو درست انجام میده
 
         Console.WriteLine("===> Database seeding completed!");
     }
